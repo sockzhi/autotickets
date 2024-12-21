@@ -2,6 +2,9 @@
 
 This repository contains a Python-based automation script for interacting with web pages using LLM and Playwright. The script is designed to perform web scraping, manipulate web elements, and interact with dynamic content. It includes a specific use case for automating flight search on a booking website by extracting actions and interacting with elements based on a natural language description of goals.
 
+[![demo](https://img.youtube.com/vi/rEzxysmui6Y/0.jpg)](https://youtu.be/rEzxysmui6Y)
+
+
 ## Features
 
 - **Web Automation**: Uses Playwright to launch browsers and navigate web pages.
