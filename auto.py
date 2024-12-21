@@ -22,7 +22,7 @@ ACTIONS = {
     'COMPLETE': 'COMPLETE'
 }
 
-api_key=""
+api_key="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"
 ID_ATTR: str = "unique_id"
 LOG = structlog.get_logger()
 def generate_chat_completion(user_message):
@@ -47,7 +47,7 @@ def load_js_script() -> str:
     # TODO: Handle file location better. This is a hacky way to find the file location.
     path = f"domUtils.js"
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding='utf-8') as f:
             return f.read()
     except FileNotFoundError as e:
         LOG.exception("Failed to load the JS script", path=path)
@@ -230,7 +230,7 @@ def _convert_svg_to_string(
             element["isDropped"] = True
             return
 
-        LOG.debug("call LLM to convert SVG to string shape", element_id=element_id)
+        # LOG.debug("call LLM to convert SVG to string shape", element_id=element_id)
         svg_convert_prompt = load_prompt("svg-convert", svg_element=svg_html)
 
         for retry in range(1):
@@ -246,7 +246,7 @@ def _convert_svg_to_string(
             # recognized = json_response.get("recognized", False)
             # if not svg_shape or not recognized:
             #     raise Exception("Empty or unrecognized SVG shape replied by secondary llm")
-            LOG.info("SVG converted by LLM", element_id=element_id, key=svg_key, shape=svg_shape)
+            # LOG.info("SVG converted by LLM", element_id=element_id, key=svg_key, shape=svg_shape)
             break
         else:
             LOG.warning(
@@ -410,13 +410,16 @@ def cleanup_element_tree_func(frame: Page | Frame, url: str, element_tree: list[
 
 url = "https://www.booking.com/flights"
 navigation_goal = "You already on flight search page, search a One-way ticket.Enter 'ROC' as the departure airport, 'LAX' as the destination airport, and '12/28/2024' as the travel date. Click the search button to display available flights. COMPLETE when the list of available flights is displayed on the screen."
-def run(playwright: Playwright):
-    print("GOAL:", navigation_goal)
-    webkit = playwright.webkit
-    browser = webkit.launch(headless=False)
-    context = browser.new_context()
-    page = context.new_page()
-    page.goto(url)
+def run(page: Page, goal: str):
+    print("GOAL:", goal)
+    # webkit = playwright.webkit
+    # browser = webkit.launch(headless=False)
+    # context = browser.new_context()
+    # page = context.new_page()
+    # page.goto(url)
+    # time.sleep(5)
+    # with open('output2.txt', 'w', encoding="utf-8") as file:
+    #  file.write(page.content())  # Write the string to the file
     draw_boxes = True
     JS_FUNCTION_DEFS = load_js_script()
     # print(JS_FUNCTION_DEFS)
@@ -425,7 +428,7 @@ def run(playwright: Playwright):
     js_script = f"() => scrollToTop({str(draw_boxes).lower()})"
     page.evaluate(expression=js_script)
     #screen shot
-    page.screenshot(path="screenshot.png")
+    # page.screenshot(path="screenshot.png")
     #get element tree
     main_frame_js_script = "() => buildTreeFromBody()"
     elements, element_tree = page.evaluate(expression=main_frame_js_script)
@@ -433,7 +436,6 @@ def run(playwright: Playwright):
     id_to_css_dict, id_to_element_dict, id_to_frame_dict = build_element_dict(
         elements
     )
-
     # print(id_to_frame_dict)
     #get main frame
     js_script = "() => document.body.innerText"
@@ -454,46 +456,67 @@ def run(playwright: Playwright):
     for script in soup.find_all('script'):
         script.decompose()
     # List of tags to keep (interactable elements)
-    interactable_tags = ['svg']
-
+    # interactable_tags = ['svg']
     for script in soup.find_all('style'):
         script.decompose()
     # List of tags to keep (interactable elements)
-    interactable_tags = ['span']
+    interactable_tags = ['span', 'input', 'button']
+
 
     for tag in soup.find_all(True):
-        if not tag.get_text(strip=True):  # If there is no content inside the tag
+        if not tag.get_text(strip=True) and tag.name != 'input':  # If there is no content inside the tag
             tag.decompose()  # Remove the tag
             # Remove the class attribute
     for tag in soup.find_all(True):
-        if tag and tag.has_attr('class'):
+        if tag and tag.has_attr('class') and tag.name != 'input':
             del tag['class']
     # Find all interactable elements from the list of tags
     interactable_elements = soup.find_all(interactable_tags)
 
     element_tree_in_prompt = "".join(json_to_html(element) for element in element_tree)
-    soup2 = BeautifulSoup(element_tree_in_prompt, 'html.parser')
-    for tag in soup2.find_all(True):
-        if not tag.get_text(strip=True):  # If there is no content inside the tag
-            tag.decompose()  # Remove the tag
+    # soup2 = BeautifulSoup(element_tree_in_prompt, 'html.parser')
+    # for tag in soup2.find_all(True):
+    #     if not tag.get_text(strip=True):  # If there is no content inside the tag
+    #         tag.decompose()  # Remove the tag
     # print(soup)
-    prompt = load_prompt(template="extract-action", navigation_goal=navigation_goal, current_url=url, elements=str(interactable_elements))
+    prompt = load_prompt(template="extract-action", navigation_goal=goal, current_url=url, elements=str(interactable_elements))
     action_output = generate_chat_completion(prompt)
-
     print(action_output)
     json_response = json.loads(action_output)
+    if json_response['user_goal_achieved'] == True:
+        print("Success!")
     for i in range(len(json_response["actions"])):
+        time.sleep(5)
         css, element, frame = get_element_by_id(json_response["actions"][i]["id"], id_to_css_dict, id_to_element_dict, id_to_frame_dict)
         # print(css)
         locator = page.locator(css)
         if json_response["actions"][i]["action_type"] == ACTIONS["CLICK"]:
             locator.click(timeout=1000)
         elif json_response["actions"][i]["action_type"] == ACTIONS["INPUT_TEXT"]:
-            locator.fill(json_response["actions"][i]["text"])
+            try:
+                locator.fill(json_response["actions"][i]["text"])
+            except:
+                print("CLICK fisrt")
+                locator.click(timeout=1000)
+                time.sleep(5)
+                # with open('output3.txt', 'w', encoding="utf-8") as file:
+                #     file.write(page.content())  # Write the string to the file
+                print(json_response["actions"][i])
+                json_response["actions"][i]["id"] = 'you need to set an input element id here'
+                run(page, str(json_response["actions"][i]))
+
         # getattr(locator, ACTIONS[json_response["actions"][i]["action_type"]])()
         # locator.click(timeout=1000)
         time.sleep(5)
     browser.close()
 
 with sync_playwright() as playwright:
-    run(playwright)
+    webkit = playwright.webkit
+    browser = webkit.launch(headless=False)
+    context = browser.new_context()
+    page = context.new_page()
+    page.goto(url)
+    # time.sleep(5)
+    # with open('output1.txt', 'w', encoding="utf-8") as file:
+    #  file.write(page.content())  # Write the string to the file
+    run(page, navigation_goal)
